@@ -4,17 +4,23 @@ from tkinter import ttk
 import matplotlib.patches as mpatches
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from matplotlib.patches import Rectangle
-from matplotlib.patches import Circle
+from matplotlib.patches import Rectangle, Circle
 import matplotlib.pyplot as plt
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageTk
 from matplotlib import ticker
-from PIL import Image, ImageDraw
+from tkinter import Canvas, filedialog
+import cv2
+from scipy.ndimage.measurements import label
+
+
+
 
 class Framework:
+    
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Parking Space Optimization")
+        # Apply ttk theme
         self.view = View(master=self.root, controller=None)  # Pass None initially
         self.model = Model()
         self.solver = Solver(self.model)  # Pass the model to Solver
@@ -47,42 +53,57 @@ class Visualizer1:
         # Fields
         self.preliminary_parking_plan = None
         self.number_of_parking_spaces = None
+        self.width_of_parking_lot = None
+        self.vehicle_type_var = tk.BooleanVar()
+        self.vehicle_type = 'car' if self.vehicle_type_var.get() else 'truck'
 
         # Create a frame for data entry
         entry_frame = ttk.Frame(self.master)
         entry_frame.pack(padx=20, pady=20)
 
         # Preliminary Parking Plan Entry
-        ttk.Label(entry_frame, text="Enter Preliminary Parking Plan:").grid(row=0, column=0, sticky='w')
-        self.preliminary_parking_plan_entry = ttk.Entry(entry_frame, width=40)
-        self.preliminary_parking_plan_entry.grid(row=1, column=0, sticky='w')
+        ttk.Label(entry_frame, text="Upload Preliminary Parking Plan Image:").grid(row=0, column=0, sticky='w')
+        self.preliminary_parking_plan_button = ttk.Button(entry_frame, text="Select Image", command=self.select_image)
+        self.preliminary_parking_plan_button.grid(row=1, column=0, sticky='w')
 
         # Number of Parking Spaces Entry
         ttk.Label(entry_frame, text="Enter Number of Parking Spaces:").grid(row=2, column=0, sticky='w')
         self.number_of_parking_spaces_entry = ttk.Entry(entry_frame, width=40)
         self.number_of_parking_spaces_entry.grid(row=3, column=0, sticky='w')
 
+        # Width of Parking Lot Entry
+        ttk.Label(entry_frame, text="Enter Width of Parking Lot (meters):").grid(row=4, column=0, sticky='w')
+        self.width_of_parking_lot_entry = ttk.Entry(entry_frame, width=40)
+        self.width_of_parking_lot_entry.grid(row=5, column=0, sticky='w')
+
+        # Vehicle Type Checkbox
+        self.vehicle_type_var = tk.BooleanVar()
+        ttk.Checkbutton(entry_frame, text="Vehicles are Cars", variable=self.vehicle_type_var).grid(row=6, column=0, sticky='w')
+
         # Submit button for data entry
         self.submit_button = ttk.Button(entry_frame, text="Submit", command=self.data_entry)
-        self.submit_button.grid(row=4, column=0, sticky='w', pady=10)
+        self.submit_button.grid(row=7, column=0, sticky='w', pady=10)
+
+    def select_image(self):
+        file_path = filedialog.askopenfilename(filetypes=[("Image files", "*.png *.jpg *.jpeg *.bmp")])
+        if file_path:
+            self.preliminary_parking_plan = file_path
+            # You might want to display the image in the GUI here using the View module
 
     def data_entry(self):
         # Method to handle data entry and validation
-        self.preliminary_parking_plan = self.preliminary_parking_plan_entry.get()
-        self.number_of_parking_spaces = self.number_of_parking_spaces_entry.get()
-
-        # Validate data before passing it to the model
-        if self.preliminary_parking_plan and self.number_of_parking_spaces:
-            # Assuming preliminary_parking_plan is a string representation of a list
+        if self.preliminary_parking_plan and self.number_of_parking_spaces_entry.get() and self.width_of_parking_lot_entry.get():
             try:
-                self.preliminary_parking_plan = eval(self.preliminary_parking_plan)
-                self.number_of_parking_spaces = int(self.number_of_parking_spaces)
+                self.number_of_parking_spaces = int(self.number_of_parking_spaces_entry.get())
+                self.width_of_parking_lot = float(self.width_of_parking_lot_entry.get())
+                self.vehicle_type = 'car' if self.vehicle_type_var.get() else 'truck'
                 # Pass the validated data to the controller for further processing
-                self.controller.handle_data_entry(self.preliminary_parking_plan, self.number_of_parking_spaces)
+                self.controller.handle_data_entry(self.preliminary_parking_plan, self.number_of_parking_spaces, self.width_of_parking_lot, self.vehicle_type)
             except Exception as e:
                 print(f"Data Entry Error: {e}")
         else:
-            print("Both fields must be filled.")
+            print("All fields must be filled.")
+
 
 class Visualizer2:
     def __init__(self, master, view, model, controller):  # Add controller as a parameter
@@ -158,18 +179,36 @@ class Visualizer2:
         # Logic for stopping the simulation
         pass
 
+    def data_entry(self):
+        # Method to handle data entry and validation
+        if self.preliminary_parking_plan and self.number_of_parking_spaces_entry.get() and self.width_of_parking_lot_entry.get():
+            try:
+                number_of_parking_spaces = int(self.number_of_parking_spaces_entry.get())
+                width_of_parking_lot = float(self.width_of_parking_lot_entry.get())
+                vehicle_type = self.vehicle_type_var.get()  # Already a boolean
+                # Pass the validated data to the controller for further processing
+                self.controller.handle_data_entry(self.preliminary_parking_plan, number_of_parking_spaces, width_of_parking_lot, vehicle_type)
+            except ValueError as ve:
+                # Handle ValueError which occurs if conversion fails
+                print(f"Data Entry Error: {ve}")
+        else:
+            print("All fields must be filled.")
+
 class Controller:
-    def __init__(self, model, view, solver, visualizer1=None):  # Add visualizer1 as a parameter
+    def __init__(self, model, view, solver, visualizer1):
         self.model = model
         self.view = view
         self.solver = solver
         self.visualizer1 = visualizer1  # Store visualizer1
+
+        # Connect Visualizer1's submit button to handle_data_entry method
+        self.visualizer1.submit_button.config(command=self.handle_data_entry)
         
         # Connect View's buttons and entries to corresponding methods
        
         # Connect Visualizer1's submit button to handle_data_entry method
-        self.visualizer1.submit_button.config(command=lambda: self.handle_data_entry(self.visualizer1.preliminary_parking_plan_entry.get(), self.visualizer1.number_of_parking_spaces_entry.get()))
-
+        self.visualizer1.submit_button.config(command=self.handle_data_entry)
+        
         # Connect View's buttons and entries to corresponding methods
 
 
@@ -243,24 +282,47 @@ class Controller:
         # self.view.set_plot_color(color)
         pass
 
-    def handle_data_entry(self, preliminary_parking_plan, number_of_parking_spaces):
+    def handle_data_entry(self):
         # Method to handle data entry and validation
-        # Validate data before passing it to the model
-        if preliminary_parking_plan and number_of_parking_spaces:
-            # Assuming preliminary_parking_plan is a string representation of a list
+        if self.visualizer1.preliminary_parking_plan and \
+           self.visualizer1.number_of_parking_spaces_entry.get() and \
+           self.visualizer1.width_of_parking_lot_entry.get():
+
             try:
-                preliminary_parking_plan = eval(preliminary_parking_plan)
-                number_of_parking_spaces = int(number_of_parking_spaces)
-                # Pass the validated data to the model
-                self.model.preliminary_parking_plan = preliminary_parking_plan
+                number_of_parking_spaces = int(self.visualizer1.number_of_parking_spaces_entry.get())
+                width_of_parking_lot = float(self.visualizer1.width_of_parking_lot_entry.get())
+                vehicle_type = self.visualizer1.vehicle_type_var.get()  # Already a boolean
+
+                # Pass the validated data to the model and solver for further processing
+                self.model.preliminary_parking_plan = self.visualizer1.preliminary_parking_plan
                 self.model.number_of_parking_spaces = number_of_parking_spaces
-                # Update the solver with the new data
+                self.model.width_of_parking_lot = width_of_parking_lot
+                self.model.vehicle_type = vehicle_type
+
                 self.solver.preliminary_parking_plan = self.model.preliminary_parking_plan
                 self.solver.number_of_parking_spaces = self.model.number_of_parking_spaces
-            except Exception as e:
-                print(f"Data Entry Error: {e}")
+                self.solver.width_of_parking_lot = self.model.width_of_parking_lot
+                self.solver.vehicle_type = self.model.vehicle_type
+
+                # Further processing or triggering the solver can be done here
+                self.solver.solve_problem()
+
+            except ValueError as ve:
+                print(f"Data Entry Error: {ve}")
         else:
-            print("Both fields must be filled.")
+            print("All fields must be filled.")
+    def process_data(self, image_path, number_of_parking_spaces, width_of_parking_lot, vehicle_type):
+        # Load the image from the provided path
+        image = Image.open(image_path)
+        self.model.preliminary_parking_plan = image
+        self.model.number_of_parking_spaces = number_of_parking_spaces
+        self.model.width_of_parking_lot = width_of_parking_lot
+        self.model.vehicle_type = vehicle_type
+        # Update the solver with the new data
+        self.solver.preliminary_parking_plan = self.model.preliminary_parking_plan
+        self.solver.number_of_parking_spaces = self.model.number_of_parking_spaces
+        self.solver.width_of_parking_lot = self.model.width_of_parking_lot
+        self.solver.vehicle_type = self.model.vehicle_type
 
 class View:
     def __init__(self, master, controller):
@@ -268,194 +330,189 @@ class View:
         self.controller = controller
         self.master.title("Raster Graphics Application")
 
-        # Initialize canvas size and create a new image
-        self.canvas_size = (800, 600)
-        self.image = Image.new('RGB', self.canvas_size, 'white')
+        # Setup Raster Image and Draw object
+        self.image = Image.new('RGB', (800, 600), 'white')  # Default size
         self.draw = ImageDraw.Draw(self.image)
+        self.canvas_size = self.image.size
 
-        # Setup Matplotlib figure
-        self.fig = Figure(figsize=(5, 4), dpi=100)
-        self.ax = self.fig.add_subplot(111)
-        self.canvas = FigureCanvasTkAgg(self.fig, master=self.master)
-        self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1)
+        # Create a frame to hold the Tkinter canvas
+        self.canvas_frame = ttk.Frame(self.master)
+        self.canvas_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
-        # Control panel setup
-        control_frame = ttk.Frame(self.master)
-        control_frame.pack(side=tk.TOP, fill=tk.X)
-
-        # Define buttons
-        self.create_button(control_frame, "Clear", self.clear_canvas)
-        self.create_button(control_frame, "Save", self.save_image)
-        self.create_button(control_frame, "Load", self.load_image)
-        self.create_button(control_frame, "Eraser Mode", self.toggle_eraser_mode)
-        self.create_button(control_frame, "Line Mode: Off", self.toggle_line_mode)
-        self.canvas.mpl_connect('button_press_event', self.on_flood_fill_click)
-
-        # Start, Pause, Stop buttons
-        if self.controller:
-            self.create_button(control_frame, "Start", self.controller.start_simulation)
-            self.create_button(control_frame, "Pause", self.controller.pause_simulation)
-            self.create_button(control_frame, "Stop", self.controller.stop_simulation)
+        # Create a Tkinter canvas for displaying the raster image
+        self.canvas = tk.Canvas(self.canvas_frame, bg='white', width=self.canvas_size[0], height=self.canvas_size[1])
+        self.canvas.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
         # Bind canvas events
-        self.canvas.mpl_connect('button_press_event', self.on_press)
-        self.canvas.mpl_connect('motion_notify_event', self.on_motion)
-        self.canvas.mpl_connect('button_release_event', self.on_release)
+        self.canvas.bind('<Button-1>', self.on_press)
+        self.canvas.bind('<B1-Motion>', self.on_motion)
+        self.canvas.bind('<ButtonRelease-1>', self.on_release)
+
+        # Create a frame for controls (buttons, etc.)
+        self.control_frame = ttk.Frame(self.master)
+        self.control_frame.pack(side=tk.BOTTOM, fill=tk.X)
+
+        # Define buttons
+        self.create_button(self.control_frame, "Clear", self.clear_canvas)
+        self.create_button(self.control_frame, "Undo", self.undo_action)
+        self.create_button(self.control_frame, "Fill", self.fill_area)
+        self.create_button(self.control_frame, "Eraser", self.erase_mode)
+        self.create_button(self.control_frame, "Line", self.line_mode)
+        self.create_button(self.control_frame, "Rectangle", self.rectangle_mode)
+        self.create_button(self.control_frame, "Save", self.save_canvas)  # New save button
+        self.create_button(self.control_frame, "Load", self.load_canvas)  # New load button
 
         # Initialize state variables
         self.is_drawing = False
-        self.is_eraser_mode = False
+        self.is_erasing = False
+        self.is_filling = False
         self.is_line_mode = False
-        self.color = 'black'
+        self.is_rectangle_mode = False
         self.current_shape = None
         self.current_pos = None
+        self.undo_stack = []
 
-        self.is_flood_fill_mode = False
-        self.create_button(control_frame, "Flood Fill", self.toggle_flood_fill_mode)
-
-        # Bind left mouse button click event to trigger flood fill
-        self.canvas.mpl_connect('button_press_event', self.on_flood_fill_click)
-        self.resolution = 100  # 1 meter = 100 pixels
+        # Update the canvas with the initial image
+        self.update_image()
 
     def create_button(self, parent, text, command):
-        ttk.Button(parent, text=text, command=command).pack(side=tk.LEFT)
-
-    def create_label_entry(self, parent, label_text, entry_reference):
-        ttk.Label(parent, text=label_text).pack(side=tk.LEFT)
-        entry_reference = ttk.Entry(parent, width=10)
-        entry_reference.pack(side=tk.LEFT)
+        button = ttk.Button(parent, text=text, command=command)
+        button.pack(side=tk.LEFT)
+        return button
 
     def clear_canvas(self):
         self.image = Image.new('RGB', self.canvas_size, 'white')
         self.draw = ImageDraw.Draw(self.image)
+        self.undo_stack = []  # Clear undo stack when clearing the canvas
         self.update_image()
 
-    def save_image(self):
-        self.image.save('raster_canvas.png')
+    def undo_action(self):
+        if self.undo_stack:
+            self.image, self.draw = self.undo_stack.pop()
+            self.update_image()
+            
+    def line_mode(self):
+        self.is_line_mode = True
+        self.is_rectangle_mode = False
+        self.is_erasing = False
+        self.is_filling = False
 
-    def load_image(self):
-        self.image = Image.open('raster_canvas.png')
-        self.draw = ImageDraw.Draw(self.image)
-        self.update_image()
 
-    def toggle_eraser_mode(self):
-        self.is_eraser_mode = not self.is_eraser_mode
-        mode_text = "On" if self.is_eraser_mode else "Off"
-        self.master.children['!frame'].children['!button4'].config(text=f"Eraser Mode: {mode_text}")
+    def fill_area(self):
+        self.is_filling = True
 
-    def toggle_line_mode(self):
-        self.is_line_mode = not self.is_line_mode
-        mode_text = "On" if self.is_line_mode else "Off"
-        self.master.children['!frame'].children['!button5'].config(text=f"Line Mode: {mode_text}")
+    def erase_mode(self):
+        self.is_erasing = True
+        self.is_line_mode = False
+        self.is_rectangle_mode = False
+        self.is_filling = False
+
+
+    def fill_area(self):
+        self.is_filling = True
+        self.is_line_mode = False  # Add this line
+        self.is_rectangle_mode = False  # And this line
+
+    def rectangle_mode(self):
+        self.is_rectangle_mode = True
+        self.is_line_mode = False  # Add this line
+
 
     def update_image(self):
-        self.ax.imshow(self.image)
-        self.canvas.draw()
+        self.canvas.delete("all")
+        # Convert PIL Image to PhotoImage
+        photo_image = ImageTk.PhotoImage(self.image)
+        # Ensure the PhotoImage is not garbage collected by keeping a reference
+        self.canvas.image = photo_image
+        self.canvas.create_image(0, 0, anchor=tk.NW, image=photo_image)
 
     def on_press(self, event):
-        if self.is_eraser_mode or self.is_line_mode:
-            self.current_pos = (event.xdata, event.ydata)
+        self.undo_stack.append((self.image.copy(), self.draw))
+        if self.is_line_mode:
+            self.current_pos = (event.x, event.y)
             self.is_drawing = True
-        else:
-            self.current_shape = self.draw.rectangle((event.xdata, event.ydata, event.xdata, event.ydata), fill=self.color)
+        elif self.is_rectangle_mode:
+            self.current_shape = (event.x, event.y, event.x, event.y)
             self.is_drawing = True
+        elif self.is_erasing:
+            self.draw.point((event.x, event.y), fill='white')
+            self.update_image()
 
     def on_motion(self, event):
         if self.is_drawing:
-            if self.current_pos is None:
-                self.current_pos = (event.xdata, event.ydata)
-            else:
-                if self.is_eraser_mode:
-                    # Eraser mode logic...
-                    pass
-                elif self.is_line_mode:
-                    # Convert coordinates from meters to pixels
-                    x0, y0 = self.current_pos
-                    x1, y1 = event.xdata * self.resolution, event.ydata * self.resolution
-                
-                    # Draw a line
-                    self.draw.line([x0, y0, x1, y1], fill=self.color, width=2)
-                
-                    # Update the current position for continuous line drawing
-                    self.current_pos = (x1, y1)
-                
-                    # Update the image on the canvas
-                    self.update_image()
-                else:
-                    # Convert coordinates from meters to pixels
-                    x0, y0 = self.current_pos
-                    x1, y1 = event.x * self.resolution, event.y * self.resolution
-                    rect_coords = (int(x0), int(y0), int(x1), int(y1))
-                    self.draw.rectangle(rect_coords, fill=self.color)
-                    # Update the image on the canvas
-                    self.update_image()
+            if self.is_line_mode:
+                self.draw.line([self.current_pos, (event.x, event.y)], fill='black', width=5)
+                self.current_pos = (event.x, event.y)
+                self.update_image()
+            elif self.is_rectangle_mode:
+                self.draw.rectangle([self.current_shape[0], self.current_shape[1], event.x, event.y], outline='black', width=5)
+                self.current_shape.extend([event.x, event.y])
+                self.update_image()
+        elif self.is_erasing:
+            self.draw.rectangle([event.x-5, event.y-5, event.x+5, event.y+5], fill='white')
+            self.update_image()
 
     def on_release(self, event):
         if self.is_drawing:
-            if self.is_eraser_mode:
-                # Eraser mode logic for raster graphics
-                # Here, we convert the coordinates to integers and then draw a pixel with the background color
-                x, y = int(event.xdata), int(event.ydata)
-                if 0 <= x < self.canvas_size[0] and 0 <= y < self.canvas_size[1]:
-                    self.draw.point((x, y), fill='white')  # Assuming white is the background color
+            if self.is_line_mode:
+                # Draw the line when the mouse button is released
+                if self.current_pos is not None:
+                    self.draw.line([self.current_pos, (event.x, event.y)], fill='black', width=5)
                     self.update_image()
-
-            elif self.is_line_mode:
-                # Line mode logic for raster graphics
-                # Draw a line between the initial press point and the release point
-                x0, y0 = self.current_pos
-                x1, y1 = int(event.xdata), int(event.ydata)
-                if 0 <= x0 < self.canvas_size[0] and 0 <= y0 < self.canvas_size[1] and \
-                   0 <= x1 < self.canvas_size[0] and 0 <= y1 < self.canvas_size[1]:
-                    # Draw a line using Bresenham's algorithm or similar for raster graphics
-                    # Here, we'll just call the line method of ImageDraw
-                    self.draw.line([(x0, y0), (x1, y1)], fill=self.color, width=2)
-                    self.update_image()
-
+                self.current_pos = None
+                self.is_drawing = False
+                self.is_line_mode = False  # Add this line
+                self.is_rectangle_mode = False  # And this line
             else:
-                # Drawing mode logic for raster graphics
-                # Here, we convert the coordinates to integers and then draw a pixel with the current color
-                x, y = int(event.xdata), int(event.ydata)
-                if 0 <= x < self.canvas_size[0] and 0 <= y < self.canvas_size[1]:
-                    self.draw.point((x, y), fill=self.color)
-                    self.update_image()
+                self.draw.rectangle(self.current_shape, outline='black', width=5)
+                self.current_shape = None
+                self.is_drawing = False
+                self.update_image()
+        elif self.is_filling:
+            self.flood_fill(event.x, event.y)
+            self.is_filling = False
+        self.is_erasing = False  # Add this line
 
-            # Reset drawing state
-            self.is_drawing = False
-            self.current_pos = None
-            
-    def toggle_flood_fill_mode(self):
-        self.is_flood_fill_mode = not self.is_flood_fill_mode
-        mode_text = "On" if self.is_flood_fill_mode else "Off"
-        self.master.children['!frame'].children['!button6'].config(text=f"Flood Fill Mode: {mode_text}")
-
-    def on_flood_fill_click(self, event):
-        if self.is_flood_fill_mode:
-            self.flood_fill(int(event.xdata), int(event.ydata))
-
-    def flood_fill(self, x, y, target_color='white', replacement_color='black'):
-        """Perform a flood fill operation on the canvas."""
-        if not (0 <= x < self.canvas_size[0]) or not (0 <= y < self.canvas_size[1]):
-            return
-
+    def flood_fill(self, x, y, target_color=(255, 255, 255), replacement_color=(0, 0, 0)):
+        # Check if the starting pixel is the target color
         current_color = self.image.getpixel((x, y))
+        if current_color == target_color:
+            # Replace the color at the starting point
+            self.draw.point((x, y), replacement_color)
+            # Recursive calls on adjacent pixels
+            if x > 0:
+                self.flood_fill(x - 1, y, target_color, replacement_color)
+            if x < self.canvas_size[0] - 1:
+                self.flood_fill(x + 1, y, target_color, replacement_color)
+            if y > 0:
+                self.flood_fill(x, y - 1, target_color, replacement_color)
+            if y < self.canvas_size[1] - 1:
+                self.flood_fill(x, y + 1, target_color, replacement_color)
+            self.update_image()
+    def save_canvas(self):
+        file_path = filedialog.asksaveasfilename(defaultextension=".png", filetypes=[("PNG files", "*.png")])
+        if file_path:
+            self.image.save(file_path)
+            print(f"Image saved to {file_path}")
 
-        if current_color != target_color:
-            return
-
-        self.draw.point((x, y), fill=replacement_color)
-
-        directions = [(0, 1), (1, 0), (0, -1), (-1, 0)]  # Up, Right, Down, Left
-
-        for dx, dy in directions:
-            self.flood_fill(x + dx, y + dy, target_color, replacement_color)
+    def load_canvas(self):
+        file_path = filedialog.askopenfilename(filetypes=[("Image files", "*.png *.jpg *.jpeg *.bmp")])
+        if file_path:
+            self.image = Image.open(file_path)
+            self.update_image()
 
 class Model:
     def __init__(self):
         # Fields
-        self.preliminary_parking_plan = None
+        self.preliminary_parking_plan = None  # Now an image
         self.number_of_parking_spaces = None
         self.results = None
+
+    def load_parking_plan(self, file_path):
+        self.preliminary_parking_plan = Image.open(file_path)
+
+    def save_parking_plan(self, file_path):
+        self.preliminary_parking_plan.save(file_path)
 
     def evaluate_equations(self):
         """
@@ -491,69 +548,207 @@ class Model:
 class Solver:
     def __init__(self, model):  # Add model as a parameter
         self.model = model
-        # Fields
         self.preliminary_parking_plan = None
         self.number_of_parking_spaces = None
+        self.width_of_parking_lot = None
+        self.vehicle_type = None
+        self.vehicle_dimensions = {'car': (4.5, 2.0), 'truck': (6.0, 2.5)}  # Length, Width
 
     def solve_problem(self):
-        """
-        Method to solve the parking optimization problem using the preliminary parking plan
-        and the number of parking spaces. This method should perform the necessary calculations
-        and store the results in the 'results' field of the associated Model instance.
-        """
-        if self.preliminary_parking_plan is not None and self.number_of_parking_spaces is not None:
-            # Call the method to calculate equations
-            self.calculate_equations()
+        if self.preliminary_parking_plan is not None and self.width_of_parking_lot is not None and self.vehicle_type is not None:
+            # Ensure preliminary_parking_plan is an Image object
+            if isinstance(self.preliminary_parking_plan, str):
+                self.preliminary_parking_plan = Image.open(self.preliminary_parking_plan)
+        
+            # Now you can use .size to get the image dimensions
+            image_width, image_height = self.preliminary_parking_plan.size
+            # Assuming the longer dimension represents the length
+            parking_lot_length = max(image_width, image_height)
+            img_gray = np.array(self.preliminary_parking_plan.convert('L'))
+            img_binary = (img_gray < 255).astype(np.uint8)
+            labeled_img, num_features = label(img_binary)
+            max_area = 0
+            max_label = 0
+            for label_id in range(1, num_features + 1):
+                mask = labeled_img == label_id
+                area = np.sum(mask)
+                if area > max_area:
+                    max_area = area
+                    max_label = label_id
+
+            # Calculate the area of the largest non-white space
+            largest_non_white_area = np.sum(labeled_img == max_label)
+
+            # Calculate the area of the parking lot
+            parking_lot_area = self.width_of_parking_lot * parking_lot_length
+
+            # Scale the vehicle dimensions
+            if self.vehicle_type is True:
+                vehicle_length, vehicle_width = 4.5, 2.0
+            else:
+                vehicle_length, vehicle_width = 6.0, 2.5    
+
+            # Calculate the number of vehicles fitting in various orientations
+            # Calculate the number of vehicles that can fit based on the selected orientation
+            orientations = [(1, 0), (-1, 0), (0, 1), (0, -1)]  # North, South, East, West
+            vehicle_counts = []
+            for orientation in orientations:
+                # Calculate the number of vehicles that can fit vertically and horizontally
+                vertical_fit = parking_lot_length // vehicle_length
+                horizontal_fit = self.width_of_parking_lot // vehicle_width  # Use self.width_of_parking_lot instead of parking_lot_width
+                vehicle_counts.append(vertical_fit * horizontal_fit)
+
+
+            # Select the first orientation and create a visualization
+            selected_orientation = orientations[0]
+            self.visualize_parking(selected_orientation)
+
+            # Print the number of vehicles calculated for each orientation
+            for count in vehicle_counts:
+                print(f"Number of {self.vehicle_type}s that can fit: {count}")
+
         else:
-            print("Preliminary parking plan or number of parking spaces not provided.")
+            print("Preliminary parking plan, width of parking lot, or vehicle type not provided.")
+
+    def visualize_parking(self, orientation):
+        # Load the vehicle image based on the vehicle type
+        vehicle_type_str = 'car' if self.vehicle_type else 'truck'
+        vehicle_image = Image.open(f"{vehicle_type_str}.jpg")
+        vehicle_dimensions = self.vehicle_dimensions[vehicle_type_str]
+
+        # Scaling factor to ensure dimensions are integers
+        scale_factor = 100  # Adjust as needed
+
+        # Scale the vehicle dimensions to integers
+        vehicle_dimensions_scaled = (
+            int(vehicle_dimensions[0] * scale_factor),
+            int(vehicle_dimensions[1] * scale_factor)
+        )
+
+        # Create a copy of the preliminary parking plan for overlaying
+        parking_plan_copy = self.preliminary_parking_plan.copy()
+
+        # Calculate the number of vehicles that can fit based on the selected orientation
+        # Get the image dimensions
+        image_width, image_height = self.preliminary_parking_plan.size
+        # Assuming the longer dimension represents the length
+        parking_lot_length = max(image_width, image_height)
+
+        # Scale the parking lot dimensions
+        parking_lot_length_scaled = int(parking_lot_length * scale_factor)
+        width_of_parking_lot_scaled = int(self.width_of_parking_lot * scale_factor)
+
+        vertical_fit = int(parking_lot_length_scaled // vehicle_dimensions_scaled[0])
+        horizontal_fit = int(width_of_parking_lot_scaled // vehicle_dimensions_scaled[1])
+
+        # Determine the starting position based on orientation
+        if orientation == (1, 0):  # North
+            start_pos = (0, 0)
+        elif orientation == (-1, 0):  # South
+            start_pos = (0, parking_lot_length_scaled - vehicle_dimensions_scaled[0])
+        elif orientation == (0, 1):  # East
+            start_pos = (0, 0)
+        elif orientation == (0, -1):  # West
+            start_pos = (width_of_parking_lot_scaled - vehicle_dimensions_scaled[1], 0)
+
+        # Resize the vehicle image based on the scaled dimensions
+        vehicle_image = vehicle_image.resize(vehicle_dimensions_scaled)
+
+        # Overlay the vehicles on the parking plan copy
+        for row in range(vertical_fit):
+            for col in range(horizontal_fit):
+                pos = (
+                    int(start_pos[0] + col * vehicle_dimensions_scaled[1]),
+                    int(start_pos[1] + row * vehicle_dimensions_scaled[0])
+                )
+                parking_plan_copy.paste(vehicle_image, pos, vehicle_image)
+
+        # Save the resulting image to disk or return it depending on the application requirements
+        parking_plan_copy.save("visualized_parking_plan.jpg")
+
 
     def calculate_equations(self):
-        """
-        Method to perform calculations based on the preliminary parking plan and the number of parking spaces.
-        The results of these calculations are intended to optimize the parking space usage.
-        """
-        # Example calculation (replace this with your actual calculations)
-        # Let's assume we are calculating the average parking space size
-        average_space_size = sum(self.preliminary_parking_plan) / self.number_of_parking_spaces
+        # Assuming the goal is to calculate additional metrics based on the parking plan and vehicle type
+        occupied_area = self.number_of_parking_spaces * self.vehicle_dimensions[self.vehicle_type][0] * self.vehicle_dimensions[self.vehicle_type][1]
+        total_area = self.parking_lot_length * self.width_of_parking_lot
+        occupancy_percentage = (occupied_area / total_area) * 100
+
         # Update the results in the Model
-        self.model.results = {'average_space_size': average_space_size}
+        self.model.results = {'occupancy_percentage': occupancy_percentage}
 
     def provide_results(self):
-        """
-        Method to provide the results of the calculations to the Model.
-        This method should ensure that the results are available for generating the final plans.
-        """
         if self.model.results is not None:
-            # Example data preparation (replace this with your actual data preparation)
             final_plan_data = {
                 'parking_plan': self.preliminary_parking_plan,
                 'number_of_spaces': self.number_of_parking_spaces,
-                'average_space_size': self.model.results['average_space_size']
+                'occupancy_percentage': self.model.results.get('occupancy_percentage')
             }
             return final_plan_data
         else:
-            print("No results available to generate final plans.")
-            return None
+            return {}
 
     def transfer_data(self, model, view, controller):
-        """
-        Method to transfer data between the Model, View, and Controller.
-        This method facilitates the interaction between the different components
-        of the MVC architecture.
-        """
         # Transfer data from Model to Solver
-        if self.preliminary_parking_plan is None:
-            self.preliminary_parking_plan = model.preliminary_parking_plan
-        if self.number_of_parking_spaces is None:
-            self.number_of_parking_spaces = model.number_of_parking_spaces
+        self.preliminary_parking_plan = model.preliminary_parking_plan
+        self.number_of_parking_spaces = model.number_of_parking_spaces
+        self.width_of_parking_lot = model.width_of_parking_lot
+        self.vehicle_type = model.vehicle_type
 
         # Transfer data from Solver to Model
-        if model.preliminary_parking_plan is None:
-            model.preliminary_parking_plan = self.preliminary_parking_plan
-        if model.number_of_parking_spaces is None:
-            model.number_of_parking_spaces = self.number_of_parking_spaces
+        model.preliminary_parking_plan = self.preliminary_parking_plan
+        model.number_of_parking_spaces = self.number_of_parking_spaces
+        model.width_of_parking_lot = self.width_of_parking_lot
+        model.vehicle_type = self.vehicle_type
 
-        # Additional logic for managing the data flow can be added here.
+    def analyze_parking_plan(self):
+        # Convert the image to grayscale for easier processing
+        gray = cv2.cvtColor(np.array(self.preliminary_parking_plan), cv2.COLOR_RGB2GRAY)
+
+        # Apply Gaussian blur to reduce noise
+        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+
+        # Apply adaptive thresholding to binarize the image
+        binary = cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2)
+
+        # Apply morphological opening (erosion followed by dilation) to remove small objects
+        kernel = np.ones((3, 3), np.uint8)
+        opened = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=2)
+
+        # Find contours in the processed binary image
+        contours, _ = cv2.findContours(opened, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        # Analyze each contour to find parking spaces
+        parking_spaces = []
+        min_area = 500  # Minimum area for a contour to be considered a parking space
+        for contour in contours:
+            # Approximate the contour to a polygon
+            epsilon = 0.01 * cv2.arcLength(contour, True)
+            approx = cv2.approxPolyDP(contour, epsilon, True)
+
+            # Calculate the area of the contour
+            area = cv2.contourArea(contour)
+
+            # If the area is too small, skip this contour
+            if area < min_area:
+                continue
+
+            # If the polygon has four points and is nearly rectangular, it might be a parking space
+            if len(approx) == 4:
+                # Calculate the bounding rectangle around the contour
+                x, y, w, h = cv2.boundingRect(approx)
+
+                # Calculate the aspect ratio of the bounding rectangle
+                aspect_ratio = w / float(h)
+
+                # If the aspect ratio is too far from 1 (square-like), it might not be a parking space
+                if aspect_ratio < 0.5 or aspect_ratio > 2:
+                    continue
+
+                # Add the potential parking space to the list
+                parking_spaces.append({'x': x, 'y': y, 'width': w, 'height': h})
+
+        # Store the results in self.model.results
+        self.model.results = {'parking_spaces': parking_spaces}
 
 if __name__ == "__main__":
     app = Framework()
